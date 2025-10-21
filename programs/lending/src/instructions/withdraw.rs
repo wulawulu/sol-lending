@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -46,12 +48,24 @@ pub struct Withdraw<'info> {
 
 pub fn process_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     let user = &mut ctx.accounts.user_account;
-    let deposit = if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
+    let deposit_value = if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
         user.deposit_usdc
     } else {
         user.deposit_sol
     };
-    if amount > deposit {
+
+    let time_diff = user.last_update - Clock::get()?.unix_timestamp;
+
+    let bank = &mut ctx.accounts.bank;
+    bank.total_deposits = (bank.total_deposits as f64
+        * E.powf(bank.interest_rate as f32 * time_diff as f32) as f64)
+        as u64;
+
+    let value_per_share = bank.total_deposits as f64 / bank.total_deposit_shares as f64;
+
+    let user_value = deposit_value as f64 / value_per_share;
+
+    if user_value < amount as f64 {
         return Err(ErrorCode::InsufficientFunds.into());
     }
 
