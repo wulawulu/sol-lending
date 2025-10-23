@@ -4,9 +4,6 @@ members = [
 ]
 resolver = "2"
 
-[patch.crates-io]
-indexmap = { version = "=2.11.4" }
-
 [profile.release]
 overflow-checks = true
 lto = "fat"
