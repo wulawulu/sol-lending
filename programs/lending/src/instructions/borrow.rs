@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -7,6 +5,7 @@ use anchor_spl::{
 };
 use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
+use super::calculate_accrued_interest;
 use crate::state::{Bank, User};
 use crate::{
     constants::{MAXIMUM_AGE, SOL_USD_FEED_ID, USDC_USD_FEED_ID},
@@ -71,14 +70,14 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
             let sol_price =
                 price_update.get_price_no_older_than(&Clock::get()?, MAXIMUM_AGE, &sol_feed_id)?;
             let accured_interest =
-                calculate_accured_interest(user.deposit_sol, bank.interest_rate, user.last_update)?;
+                calculate_accrued_interest(user.deposit_sol, bank.interest_rate, user.last_update)?;
             sol_price.price as u64 * accured_interest
         }
         _ => {
             let usdc_feed_id = get_feed_id_from_hex(USDC_USD_FEED_ID)?;
             let usdc_price =
                 price_update.get_price_no_older_than(&Clock::get()?, MAXIMUM_AGE, &usdc_feed_id)?;
-            let accured_interest = calculate_accured_interest(
+            let accured_interest = calculate_accrued_interest(
                 user.deposit_usdc,
                 bank.interest_rate,
                 user.last_update,
@@ -129,19 +128,11 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
 
     if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
         user.borrow_usdc += amount;
-        user.borrow_usdc_shares += user_shares as u64;
+        user.borrow_usdc_shares += user_shares;
     } else {
         user.borrow_sol += amount;
-        user.borrow_sol_shares += user_shares as u64;
+        user.borrow_sol_shares += user_shares;
     }
 
     Ok(())
-}
-
-fn calculate_accured_interest(deposited: u64, interest_rate: u64, last_update: i64) -> Result<u64> {
-    let current_time = Clock::get()?.unix_timestamp;
-    let time_elapsed = current_time - last_update;
-    let interest =
-        (deposited as f64 * E.powf(interest_rate as f32 * time_elapsed as f32) as f64) as f64;
-    Ok(interest as u64)
 }
