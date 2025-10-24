@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -48,12 +50,23 @@ pub struct Reply<'info> {
 pub fn process_reply(ctx: Context<Reply>, amount: u64) -> Result<()> {
     let user = &mut ctx.accounts.user_account;
     let borrow_value = if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
-        user.borrow_usdc
+        user.borrowed_usdc
     } else {
-        user.borrow_sol
+        user.borrowed_sol
     };
 
-    if amount > borrow_value {
+    let time_diff = user.last_update - Clock::get()?.unix_timestamp;
+
+    let bank = &mut ctx.accounts.bank;
+    bank.total_deposits -= (bank.total_deposits as f64
+        * E.powf(bank.interest_rate as f32 * time_diff as f32) as f64)
+        as u64;
+
+    let value_per_share = bank.total_deposits as f64 / bank.total_deposit_shares as f64;
+
+    let user_value = borrow_value / value_per_share as u64;
+
+    if amount > user_value {
         return Err(ErrorCode::OverReply.into());
     }
 
@@ -80,11 +93,11 @@ pub fn process_reply(ctx: Context<Reply>, amount: u64) -> Result<()> {
     let user = &mut ctx.accounts.user_account;
 
     if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
-        user.borrow_usdc -= amount;
-        user.borrow_usdc_shares -= user_shares;
+        user.borrowed_usdc -= amount;
+        user.borrowed_usdc_shares -= user_shares;
     } else {
-        user.borrow_sol -= amount;
-        user.borrow_sol_shares -= user_shares;
+        user.borrowed_sol -= amount;
+        user.borrowed_sol_shares -= user_shares;
     }
 
     bank.total_borrowed -= amount;

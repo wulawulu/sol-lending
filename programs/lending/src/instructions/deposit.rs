@@ -73,12 +73,12 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
     match ctx.accounts.mint.to_account_info().key() {
         key if key == user.usdc_address => {
-            user.deposit_usdc += amount;
-            user.deposit_usdc_shares += user_shares;
+            user.deposited_usdc += amount;
+            user.deposited_usdc_shares += user_shares;
         }
         _ => {
-            user.deposit_sol += amount;
-            user.deposit_sol_shares += user_shares;
+            user.deposited_sol += amount;
+            user.deposited_sol_shares += user_shares;
         }
     }
 

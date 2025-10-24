@@ -49,9 +49,9 @@ pub struct Withdraw<'info> {
 pub fn process_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     let user = &mut ctx.accounts.user_account;
     let deposit_value = if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
-        user.deposit_usdc
+        user.deposited_usdc
     } else {
-        user.deposit_sol
+        user.deposited_sol
     };
 
     let time_diff = user.last_update - Clock::get()?.unix_timestamp;
@@ -97,11 +97,11 @@ pub fn process_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     let user = &mut ctx.accounts.user_account;
 
     if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
-        user.deposit_usdc -= amount;
-        user.deposit_usdc_shares -= shares_to_remove as u64;
+        user.deposited_usdc -= amount;
+        user.deposited_usdc_shares -= shares_to_remove as u64;
     } else {
-        user.deposit_sol -= amount;
-        user.deposit_sol_shares -= shares_to_remove as u64;
+        user.deposited_sol -= amount;
+        user.deposited_sol_shares -= shares_to_remove as u64;
     }
 
     bank.total_deposits -= amount;

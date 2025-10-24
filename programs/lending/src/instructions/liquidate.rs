@@ -8,6 +8,7 @@ use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2
 use crate::{
     constants::{MAXIMUM_AGE, SOL_USD_FEED_ID, USDC_USD_FEED_ID},
     error::ErrorCode,
+    instructions::calculate_accrued_interest,
     state::{Bank, User},
 };
 
@@ -74,6 +75,7 @@ pub struct Liquidate<'info> {
 
 pub fn process_liquidate(ctx: Context<Liquidate>) -> Result<()> {
     let collateral_bank = &mut ctx.accounts.collateral_bank;
+    let borrowed_bank = &mut ctx.accounts.borrow_bank;
     let user = &mut ctx.accounts.user_account;
 
     let price_update = &ctx.accounts.price_update;
@@ -85,10 +87,34 @@ pub fn process_liquidate(ctx: Context<Liquidate>) -> Result<()> {
     let usdc_price =
         price_update.get_price_no_older_than(&Clock::get()?, MAXIMUM_AGE, &usdc_feed_id)?;
 
-    let total_collateral =
-        (sol_price.price as u64 * user.deposit_sol) + (usdc_price.price as u64 * user.deposit_usdc);
-    let total_borrowed =
-        (sol_price.price as u64 * user.borrow_sol) + (usdc_price.price as u64 * user.borrow_usdc);
+    let (total_collateral, total_borrowed) =
+        if ctx.accounts.collateral_mint.key() == user.usdc_address {
+            (
+                calculate_accrued_interest(
+                    user.deposited_usdc,
+                    collateral_bank.interest_rate,
+                    user.last_update,
+                )? * usdc_price.price as u64,
+                calculate_accrued_interest(
+                    user.borrowed_sol,
+                    borrowed_bank.interest_rate,
+                    user.last_update,
+                )? * sol_price.price as u64,
+            )
+        } else {
+            (
+                calculate_accrued_interest(
+                    user.deposited_sol,
+                    collateral_bank.interest_rate,
+                    user.last_update,
+                )? * usdc_price.price as u64,
+                calculate_accrued_interest(
+                    user.borrowed_usdc,
+                    borrowed_bank.interest_rate,
+                    user.last_update,
+                )? * sol_price.price as u64,
+            )
+        };
 
     let health_factor = (total_collateral * collateral_bank.liquidation_threshold) / total_borrowed;
 

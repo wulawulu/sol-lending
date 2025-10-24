@@ -69,20 +69,23 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
             let sol_feed_id = get_feed_id_from_hex(SOL_USD_FEED_ID)?;
             let sol_price =
                 price_update.get_price_no_older_than(&Clock::get()?, MAXIMUM_AGE, &sol_feed_id)?;
-            let accured_interest =
-                calculate_accrued_interest(user.deposit_sol, bank.interest_rate, user.last_update)?;
+            let accured_interest = calculate_accrued_interest(
+                user.deposited_sol,
+                bank.interest_rate,
+                user.last_update,
+            )?;
             sol_price.price as u64 * accured_interest
         }
         _ => {
             let usdc_feed_id = get_feed_id_from_hex(USDC_USD_FEED_ID)?;
             let usdc_price =
                 price_update.get_price_no_older_than(&Clock::get()?, MAXIMUM_AGE, &usdc_feed_id)?;
-            let accured_interest = calculate_accrued_interest(
-                user.deposit_usdc,
+            let accrued_interest = calculate_accrued_interest(
+                user.deposited_usdc,
                 bank.interest_rate,
                 user.last_update,
             )?;
-            usdc_price.price as u64 * accured_interest
+            usdc_price.price as u64 * accrued_interest
         }
     };
 
@@ -127,11 +130,11 @@ pub fn process_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
         .unwrap();
 
     if ctx.accounts.mint.to_account_info().key() == user.usdc_address {
-        user.borrow_usdc += amount;
-        user.borrow_usdc_shares += user_shares;
+        user.borrowed_usdc += amount;
+        user.borrowed_usdc_shares += user_shares;
     } else {
-        user.borrow_sol += amount;
-        user.borrow_sol_shares += user_shares;
+        user.borrowed_sol += amount;
+        user.borrowed_sol_shares += user_shares;
     }
 
     Ok(())
