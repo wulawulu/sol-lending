@@ -39,4 +39,8 @@ pub mod lending {
     pub fn reply(ctx: Context<Reply>, amount: u64) -> Result<()> {
         process_reply(ctx, amount)
     }
+
+    pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
+        process_liquidate(ctx)
+    }
 }

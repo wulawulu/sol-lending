@@ -1,12 +1,14 @@
 mod admin;
 mod borrow;
 mod deposit;
+mod liquidate;
 mod reply;
 mod withdraw;
 
 pub use admin::*;
 pub use borrow::*;
 pub use deposit::*;
+pub use liquidate::*;
 pub use reply::*;
 pub use withdraw::*;
 
