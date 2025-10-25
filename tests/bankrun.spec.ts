@@ -9,14 +9,24 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { BanksClient, ProgramTestContext, startAnchor } from "solana-bankrun";
 import { BankrunProvider } from "anchor-bankrun";
-import { AccountInfo, Connection, PublicKey, Keypair } from "@solana/web3.js";
+import {
+  AccountInfo,
+  Connection,
+  PublicKey,
+  Keypair,
+  SystemProgram,
+} from "@solana/web3.js";
 import { BankrunContextWrapper } from "../bankrun-utils/bankrunConnection";
 import {
   DEFAULT_RECEIVER_PROGRAM_ID,
   PythSolanaReceiver,
 } from "@pythnetwork/pyth-solana-receiver";
 import { createAccount, createMint, mintTo } from "spl-token-bankrun";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import { sha256 } from "@noble/hashes/sha256";
 
 type PriceUpdateAccountConfig = {
@@ -144,9 +154,13 @@ describe("Lending Smart Contract", async () => {
   let bankClient: BanksClient;
   let signer: Keypair;
 
-  let usdcBankAccount: PublicKey;
-  let solBankAccount: PublicKey;
-  let solTokenAccount: PublicKey;
+  let usdcBankState: PublicKey;
+  let solBankState: PublicKey;
+  let usdcBankTokenAccount: PublicKey;
+  let solBankTokenAccount: PublicKey;
+  let userAccountPda: PublicKey;
+  let userUsdcTokenAccount: PublicKey;
+  let userSolTokenAccount: PublicKey;
 
   context = await startAnchor(
     "",
@@ -155,8 +169,8 @@ describe("Lending Smart Contract", async () => {
   );
   provider = new BankrunProvider(context);
 
-  const SOL_PRICE_FEED_ID =
-    "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
+  const USDC_PRICE_FEED_ID =
+    "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a";
 
   bankrunContextWrapper = new BankrunContextWrapper(context);
 
@@ -167,15 +181,15 @@ describe("Lending Smart Contract", async () => {
     wallet: provider.wallet,
   });
 
-  const solUsdPriceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
+  const usdcPriceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
     0,
-    SOL_PRICE_FEED_ID
+    USDC_PRICE_FEED_ID
   );
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   const priceUpdateAccountInfo = createPriceUpdateAccountInfo({
     authority: provider.wallet.publicKey,
-    feedIdHex: SOL_PRICE_FEED_ID,
+    feedIdHex: USDC_PRICE_FEED_ID,
     price: DEFAULT_PRICE,
     conf: DEFAULT_CONF,
     exponent: PRICE_EXPONENT,
@@ -184,7 +198,7 @@ describe("Lending Smart Contract", async () => {
   });
 
   context.setAccount(
-    solUsdPriceFeedAccount,
+    usdcPriceFeedAccount,
     priceUpdateAccountInfo
   );
 
@@ -210,33 +224,51 @@ describe("Lending Smart Contract", async () => {
     2
   );
 
-  [usdcBankAccount] = PublicKey.findProgramAddressSync(
+  [usdcBankState] = PublicKey.findProgramAddressSync(
+    [mintUSDC.toBuffer()],
+    program.programId
+  );
+
+  [solBankState] = PublicKey.findProgramAddressSync(
+    [mintSOL.toBuffer()],
+    program.programId
+  );
+
+  [usdcBankTokenAccount] = PublicKey.findProgramAddressSync(
     [Buffer.from("treasury"), mintUSDC.toBuffer()],
     program.programId
   );
 
-  [solBankAccount] = PublicKey.findProgramAddressSync(
+  [solBankTokenAccount] = PublicKey.findProgramAddressSync(
     [Buffer.from("treasury"), mintSOL.toBuffer()],
     program.programId
   );
 
-  [solTokenAccount] = PublicKey.findProgramAddressSync(
-    [Buffer.from("treasury"), mintSOL.toBuffer()],
+  [userAccountPda] = PublicKey.findProgramAddressSync(
+    [signer.publicKey.toBuffer()],
     program.programId
   );
 
-  console.log("USDC Bank Account:", usdcBankAccount.toBase58());
-  console.log("SOL Bank Account:", solBankAccount.toBase58());
+  userSolTokenAccount = getAssociatedTokenAddressSync(
+    mintSOL,
+    signer.publicKey
+  );
+
+  console.log("USDC Bank Account:", usdcBankTokenAccount.toBase58());
+  console.log("SOL Bank Account:", solBankTokenAccount.toBase58());
 
   it("Test Init User", async () => {
     const initUserTx = await program.methods
       .initUser(mintUSDC)
       .accounts({
         signer: signer.publicKey,
+        userAccount: userAccountPda,
+        systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed" });
 
     console.log("Create User Account:", initUserTx);
+
   });
 
   it("Test Init and Fund USDC Bank", async () => {
@@ -245,7 +277,10 @@ describe("Lending Smart Contract", async () => {
       .accounts({
         signer: signer.publicKey,
         mint: mintUSDC,
+        bank: usdcBankState,
+        bankTokenAccount: usdcBankTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed" });
 
@@ -256,7 +291,7 @@ describe("Lending Smart Contract", async () => {
       bankClient,
       signer,
       mintUSDC,
-      usdcBankAccount,
+      usdcBankTokenAccount,
       signer,
       amount
     );
@@ -270,7 +305,10 @@ describe("Lending Smart Contract", async () => {
       .accounts({
         signer: signer.publicKey,
         mint: mintSOL,
+        bank: solBankState,
+        bankTokenAccount: solBankTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed" });
 
@@ -281,7 +319,7 @@ describe("Lending Smart Contract", async () => {
       bankClient,
       signer,
       mintSOL,
-      solBankAccount,
+      solBankTokenAccount,
       signer,
       amount
     );
@@ -290,7 +328,7 @@ describe("Lending Smart Contract", async () => {
   });
 
   it("Create and Fund Token Account", async () => {
-    const USDCTokenAccount = await createAccount(
+    userUsdcTokenAccount = await createAccount(
       bankClient,
       signer,
       mintUSDC,
@@ -299,7 +337,7 @@ describe("Lending Smart Contract", async () => {
 
     console.log(
       "User USDC Token Account Created:",
-      USDCTokenAccount.toBase58()
+      userUsdcTokenAccount.toBase58()
     );
 
     const amount = 1_000 * 10 ** 9;
@@ -307,7 +345,7 @@ describe("Lending Smart Contract", async () => {
       bankClient,
       signer,
       mintUSDC,
-      USDCTokenAccount,
+      userUsdcTokenAccount,
       signer,
       amount
     );
@@ -316,16 +354,27 @@ describe("Lending Smart Contract", async () => {
   });
 
   it("Test Deposit USDC", async () => {
+    if (!userUsdcTokenAccount) {
+      throw new Error("User USDC token account not initialized");
+    }
+
     const depositUSDC = await program.methods
       .deposit(new anchor.BN(1000_000_000))
       .accounts({
         signer: signer.publicKey,
         mint: mintUSDC,
+        bank: usdcBankState,
+        bankTokenAccount: usdcBankTokenAccount,
+        userAccount: userAccountPda,
+        userTokenAccount: userUsdcTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .rpc({ commitment: "confirmed" });
 
     console.log("Deposit USDC Tx:", depositUSDC);
+
   });
 
   it("Test Borrow SOL", async () => {
@@ -334,8 +383,14 @@ describe("Lending Smart Contract", async () => {
       .accounts({
         signer: signer.publicKey,
         mint: mintSOL,
-        priceUpdate: solUsdPriceFeedAccount,
+        bank: solBankState,
+        bankTokenAccount: solBankTokenAccount,
+        userAccount: userAccountPda,
+        userTokenAccount: userSolTokenAccount,
+        priceUpdate: usdcPriceFeedAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .rpc({ commitment: "confirmed" });
 
@@ -348,7 +403,13 @@ describe("Lending Smart Contract", async () => {
       .accounts({
         signer: signer.publicKey,
         mint: mintSOL,
+        bank: solBankState,
+        bankTokenAccount: solBankTokenAccount,
+        userAccount: userAccountPda,
+        userTokenAccount: userSolTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .rpc({ commitment: "confirmed" });
       
@@ -361,7 +422,13 @@ describe("Lending Smart Contract", async () => {
       .accounts({
         signer: signer.publicKey,
         mint: mintUSDC,
+        bank: usdcBankState,
+        bankTokenAccount: usdcBankTokenAccount,
+        userAccount: userAccountPda,
+        userTokenAccount: userUsdcTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .rpc({ commitment: "confirmed" });
 

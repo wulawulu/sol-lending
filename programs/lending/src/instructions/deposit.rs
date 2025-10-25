@@ -26,6 +26,7 @@ pub struct Deposit<'info> {
     pub bank_token_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
+        mut,
         seeds = [signer.key().as_ref()],
         bump,
     )]

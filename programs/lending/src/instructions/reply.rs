@@ -29,6 +29,7 @@ pub struct Reply<'info> {
     pub bank_token_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
+        mut,
         seeds = [signer.key().as_ref()],
         bump,
     )]
@@ -62,9 +63,15 @@ pub fn process_reply(ctx: Context<Reply>, amount: u64) -> Result<()> {
         * E.powf(bank.interest_rate as f32 * time_diff as f32) as f64)
         as u64;
 
-    let value_per_share = bank.total_deposits as f64 / bank.total_deposit_shares as f64;
+    let value_per_share = if bank.total_deposit_shares == 0 {
+        1.0
+    } else {
+        bank.total_deposits as f64 / bank.total_deposit_shares as f64
+    };
 
-    let user_value = borrow_value / value_per_share as u64;
+    require!(value_per_share.is_normal(), ErrorCode::InsufficientFunds);
+
+    let user_value = (borrow_value as f64 / value_per_share) as u64;
 
     if amount > user_value {
         return Err(ErrorCode::OverReply.into());

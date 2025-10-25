@@ -47,6 +47,7 @@ pub struct Liquidate<'info> {
     pub borrow_bank_token_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
+        mut,
         seeds = [liquidator.key().as_ref()],
         bump,
     )]
